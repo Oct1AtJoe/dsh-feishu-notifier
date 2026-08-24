@@ -1,8 +1,12 @@
 {
   "name": "dsh-feishu-notifier",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Send DeepSeek Harness interaction and turn notifications to a Feishu bot",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blooming-fang/dsh-feishu-notifier.git"
+  },
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -16,10 +20,19 @@
   },
   "files": [
     "lib",
+    "docs",
     "cordis.yml",
     "README.md",
     "LICENSE",
     "package.json"
+  ],
+  "Keywords": [
+    "dsh",
+    "deepseek",
+    "harness",
+    "feishu",
+    "bot",
+    "notification"
   ],
   "dsh": {
     "bundle": {
