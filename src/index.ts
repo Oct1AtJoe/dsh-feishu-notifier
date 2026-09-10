@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
-import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 
 export const name = 'dsh-feishu-notifier'
 export const inject = ['settings', 'webServer']
@@ -20,7 +20,7 @@ export const Config: z<Config> = z.object({
   webhook: z.string().role('secret').default(''),
 })
 
-const SETTINGS_NAMESPACE = settingsNamespace('feishu-notifier')
+const SETTINGS_NAMESPACE = 'feishu-notifier'
 const CONFIG_PATH = '/api/feishu-notifier/config'
 const TEST_PATH = '/api/feishu-notifier/test'
 
@@ -40,7 +40,8 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
 
 export function turnReasonText(reason: unknown): string {
   const value = recordOf(reason)
-  const kind = typeof value?.kind === 'string' ? value.kind : undefined
+  if (value === undefined) return typeof reason === 'string' ? reason : '结束原因未知'
+  const kind = typeof value.kind === 'string' ? value.kind : undefined
   switch (kind) {
     case 'completed': return '正常完成'
     case 'blocked': return '被策略阻止'
@@ -56,7 +57,7 @@ export function turnReasonText(reason: unknown): string {
       if (typeof cause?.kind === 'string') return `已中止（${cause.kind}）`
       return '已中止'
     }
-    default: return typeof reason === 'string' ? reason : '结束原因未知'
+    default: return '结束原因未知'
   }
 }
 

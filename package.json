@@ -1,6 +1,6 @@
 {
   "name": "dsh-feishu-notifier",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Send DeepSeek Harness interaction and turn notifications to a Feishu bot",
   "license": "MIT",
   "repository": {
@@ -41,34 +41,33 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
   },
   "scripts": {
-    "build": "tsdown --config tsdown.config.ts",
+    "build": "node ./scripts/build.mjs",
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm run build",
     "pack:check": "pnpm pack --dry-run"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.5",
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-settings": "^0.1.5-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.2"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-session": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-user-approval": "^0.1.0-rc.5",
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-user-approval": "^0.1.5-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.2",
     "@types/react": "^18.3.1",
     "react": "^18.2.0",
     "tsdown": "^0.22.2",

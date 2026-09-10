@@ -6,7 +6,7 @@
 
 ## 使用要求
 
-- DeepSeek Harness `0.1.0-rc.5` 或兼容版本。
+- DeepSeek Harness `0.1.5-rc.1` 或兼容版本。
 - Node.js `22.19+`。
 - 在 Web 设置中配置飞书自定义机器人 Webhook。
 
