@@ -1,6 +1,6 @@
 # dsh-feishu-notifier
 
-一个 DeepSeek Harness Bundle：当智能体请求用户批准、等待用户回答问题或确认计划，以及一轮对话结束时，向飞书机器人发送文本通知。
+一个 DeepSeek Harness Bundle：当智能体请求用户批准、等待用户回答问题或确认计划，以及一轮对话结束时，向飞书机器人发送卡片通知。卡片使用飞书的 `interactive` 消息类型（卡片 JSON 2.0 的 `markdown` 组件），因此支持 Markdown；轮次结束时还会附带智能体的最终输出。
 
 ![配置界面](./docs/images/2.png)
 
@@ -74,12 +74,30 @@ pnpm dsh plugin --profile demo add github:blooming-fang/dsh-feishu-notifier
 - 用户审批请求（`approval/request` 瀑布事件）；
 - `ask_user_question` 用户问题请求；
 - `exit_plan_mode` 计划确认请求；
-- `turn/end` 对话轮次结束事件，并将完成、错误、取消、分叉和中断原因转换为可读文本。子代理（`session.header.origin === 'subagent'`）的轮次结束不会触发通知。
+
+  上面两项在两种会话形态下都会通知：普通会话记录为顶层 `tool/call`；PTC（程序化工具调用）会话的顶层调用是 `run_code`，嵌套调用记录为 `tool/ptc-dispatch-start`，插件在调用开始、提问弹出的那一刻发送通知。
+- `turn/end` 对话轮次结束事件，并将完成、错误、取消、分叉和中断原因转换为可读文本，同时附带本轮最后一段可见的助手输出（推理内容与工具调用不会进入通知，超过 3000 字会截断）。子代理（`session.header.origin === 'subagent'`）的轮次结束不会触发通知。
+
+消息格式：标题栏使用 `DSH`（如「DSH 对话已结束」「DSH 需要你的操作」），正文由卡片 JSON 2.0 的 `markdown` 组件渲染，标题、列表、代码块与链接都按 Markdown 显示。
+
+以下两种情况不会发送通知：
+
+- **用户主动停止**：轮次以 `aborted`（取消原因为 `user`）结束时保持静默，因为此时用户就在 DSH 界面旁，飞书推送只会形成干扰。由父代理、钩子或会话释放造成的取消不算用户主动停止，仍会照常通知。
+- 插件被关闭（`enabled: false`）或 Webhook 为空时，所有通知都不发送。
 
 Webhook 属于敏感设置（Config 中声明为 `role('secret')`），保存后不会返回给浏览器。不要把真实 Webhook 地址提交到 GitHub 或发布到 npm。
 
 
 ## 从旧版本升级
+
+### 从 0.3.0～0.3.2 升级到 0.3.3
+
+- 修复（0.3.3）：PTC（程序化工具调用）会话中，`ask_user_question` / `exit_plan_mode` 借由 `run_code` 触发，会话日志里不会出现同名的顶层的 `tool/call`，因此此前**完全不会**发送「等待你回答/确认」的通知。现在同时识别 `tool/call` 与 `tool/ptc-dispatch-start`，两种会话形态都会通知。
+- 修复（0.3.1）：用户主动停止（`turn/end` 的 `aborted` 原因归为 `user`）不再发送飞书通知；父代理、钩子与会话释放导致的取消仍照常通知。
+- 变更（0.3.1）：通知标题由「DeepSeek Harness」精简为「DSH」。
+- 变更（0.3.1）：消息类型由纯文本改为 `interactive` 卡片（卡片 JSON 2.0 的 `markdown` 组件），支持 Markdown；轮次结束的通知会附带该轮智能体的最终输出（最长 3000 字，超出部分截断）。
+
+安装方式不变，重新执行 `dsh plugin --profile <profile> add dsh-feishu-notifier`（或指向新的 tgz 包）并重启 DSH 即可生效。
 
 ### 从 0.2.x 升级到 0.3.0（DSH 0.2.0-rc.1）
 

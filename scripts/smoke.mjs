@@ -75,6 +75,48 @@ check('turnReasonText aborted/hook', host.turnReasonText({ kind: 'aborted', reas
 check('turnReasonText aborted/disposed', host.turnReasonText({ kind: 'aborted', reason: { kind: 'disposed' } }) === '已中止：会话已释放')
 check('turnReasonText unknown', host.turnReasonText({ kind: 'nope' }) === '结束原因未知')
 
+// A user-initiated stop must not produce a Feishu message; every other outcome
+// (including cancellations the user did not request) still notifies.
+check('shouldNotifyTurnEnd suppresses a user stop',
+  host.shouldNotifyTurnEnd({ kind: 'aborted', reason: { kind: 'user' } }) === false)
+check('shouldNotifyTurnEnd keeps a parent cancellation',
+  host.shouldNotifyTurnEnd({ kind: 'aborted', reason: { kind: 'parent' } }) === true)
+check('shouldNotifyTurnEnd keeps a hook cancellation',
+  host.shouldNotifyTurnEnd({ kind: 'aborted', reason: { kind: 'hook', reason: 'sig' } }) === true)
+check('shouldNotifyTurnEnd keeps a disposed cancellation',
+  host.shouldNotifyTurnEnd({ kind: 'aborted', reason: { kind: 'disposed' } }) === true)
+check('shouldNotifyTurnEnd keeps a completed turn',
+  host.shouldNotifyTurnEnd({ kind: 'completed' }) === true)
+check('shouldNotifyTurnEnd keeps an unknown reason shape',
+  host.shouldNotifyTurnEnd(undefined) === true && host.shouldNotifyTurnEnd({}) === true)
+
+// Card construction: notifications ride the Markdown-capable `interactive` type,
+// the title reads "DSH", and the body carries the agent's final visible output.
+const completedCard = host.notificationCard('turn-end', '第 1 轮：正常完成', '正文 **粗体**')
+check('notificationCard builds an interactive card',
+  completedCard.msg_type === 'interactive' && completedCard.card.schema === '2.0')
+check('turn-end card title uses the short DSH copy',
+  completedCard.card.header.title.content === 'DSH 对话已结束')
+check('card body renders through the Markdown element',
+  completedCard.card.body.elements[0].tag === 'markdown'
+  && completedCard.card.body.elements[0].content.includes('第 1 轮：正常完成')
+  && completedCard.card.body.elements[0].content.includes('正文 **粗体**'))
+check('approval card title uses the short DSH copy',
+  host.notificationCard('approval', '工具 pwsh 正在等待批准。', '').card.header.title.content === 'DSH 需要你的操作')
+check('no card copy mentions DeepSeek Harness',
+  JSON.stringify(completedCard).includes('DeepSeek Harness') === false)
+check('over-long output is clipped and marked',
+  host.notificationCard('turn-end', 'd', 'x'.repeat(5000)).card.body.elements[0].content.includes('已截断'))
+check('a card with nothing to say falls back to its title',
+  host.notificationCard('turn-end', '', '').card.body.elements[0].content === 'DSH 对话已结束')
+
+check('assistantText joins text blocks in order',
+  host.assistantText({ content: [{ type: 'text', text: 'a' }, { type: 'tool-call' }, { type: 'text', text: 'b' }] }) === 'a\nb')
+check('assistantText drops reasoning blocks',
+  host.assistantText({ content: [{ type: 'reasoning', text: '思路' }, { type: 'text', text: '答案' }] }) === '答案')
+check('assistantText tolerates malformed messages',
+  host.assistantText(undefined) === '' && host.assistantText({ content: 'nope' }) === '')
+
 function stubHostCtx() {
   const state = { configured: undefined, routes: [], listeners: {} }
   return {
@@ -105,30 +147,79 @@ check('apply registers approval/request', typeof ctx.state.listeners['approval/r
 check('apply registers session/event', typeof ctx.state.listeners['session/event'] === 'function')
 
 const emit = ctx.state.listeners['session/event']
-emit({ header: {} }, { type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
-await tick()
-check('main-session turn/end notifies', sent.length === 1 && sent[0].body.content.text.includes('第 3 轮：正常完成'))
+const main = { header: { id: 'session-main' } }
+const subagent = { header: { id: 'session-sub', origin: 'subagent' } }
+const cardTextOf = (message) => (message.body.card.body.elements ?? []).map(e => e.content ?? '').join('\n')
 
-emit({ header: { origin: 'subagent' } }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+emit(main, { type: 'assistant/message', data: { turn: 3, step: 1, message: { role: 'assistant', content: [
+  { type: 'reasoning', text: '这段推理不应出现在通知里' },
+  { type: 'text', text: '最终答案：**已完成**。' },
+] } } })
+emit(main, { type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
 await tick()
-check('subagent turn/end is suppressed', sent.length === 1)
+check('main-session turn/end notifies', sent.length === 1 && cardTextOf(sent[0]).includes('第 3 轮：正常完成'))
+check('turn/end card carries the final assistant output',
+  cardTextOf(sent[0]).includes('最终答案：**已完成**。'))
+check('turn/end card drops reasoning blocks',
+  cardTextOf(sent[0]).includes('这段推理不应出现在通知里') === false)
+check('turn/end card title is the short DSH copy',
+  sent[0].body.card.header.title.content === 'DSH 对话已结束')
 
-emit({ header: {} }, { type: 'tool/call', data: { name: 'ask_user_question' } })
+emit(main, { type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
 await tick()
-check('ask_user_question notifies', sent.length === 2 && sent[1].body.content.text.includes('回答问题'))
+check('final output belongs to the turn that produced it',
+  sent.length === 2 && cardTextOf(sent[1]).includes('最终答案') === false)
 
-emit({ header: {} }, { type: 'tool/call', data: { name: 'exit_plan_mode' } })
+emit(subagent, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '子代理输出' }] } } })
+emit(subagent, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
 await tick()
-check('exit_plan_mode notifies', sent.length === 3 && sent[2].body.content.text.includes('确认计划'))
+check('subagent turn/end is suppressed', sent.length === 2)
 
-emit({ header: {} }, { type: 'tool/call', data: { name: 'read' } })
+emit(main, { type: 'assistant/message', data: { turn: 5, step: 1, message: { content: [{ type: 'text', text: '被放弃的输出' }] } } })
+emit(main, { type: 'turn/end', data: { turn: 5, reason: { kind: 'aborted', reason: { kind: 'user' } } } })
 await tick()
-check('unrelated tool/call is ignored', sent.length === 3)
+check('user-stopped turn/end stays silent', sent.length === 2)
+
+emit(main, { type: 'turn/end', data: { turn: 6, reason: { kind: 'aborted', reason: { kind: 'parent' } } } })
+await tick()
+check('parent-cancelled turn/end notifies without inheriting a stopped turn',
+  sent.length === 3 && cardTextOf(sent[2]).includes('第 6 轮：已中止：父代理取消')
+  && cardTextOf(sent[2]).includes('被放弃的输出') === false)
+
+emit(main, { type: 'tool/call', data: { name: 'ask_user_question' } })
+await tick()
+check('ask_user_question notifies', sent.length === 4 && cardTextOf(sent[3]).includes('回答问题'))
+
+emit(main, { type: 'tool/call', data: { name: 'exit_plan_mode' } })
+await tick()
+check('exit_plan_mode notifies', sent.length === 5 && cardTextOf(sent[4]).includes('确认计划'))
+
+emit(main, { type: 'tool/call', data: { name: 'read' } })
+await tick()
+check('unrelated tool/call is ignored', sent.length === 5)
 
 const outcome = await ctx.state.listeners['approval/request']({ toolName: 'pwsh' }, async () => 'allowed-once')
 await tick()
 check('approval waterfall still delegates to next()', outcome === 'allowed-once')
-check('approval/request notifies with tool name', sent.length === 4 && sent[3].body.content.text.includes('pwsh'))
+check('approval/request notifies with tool name', sent.length === 6 && cardTextOf(sent[5]).includes('pwsh'))
+
+// A PTC session records nested tool calls as tool/ptc-dispatch-start (its top-level
+// tool/call is always run_code), so the decision branch must read both event types.
+const ptcCall = { rootCallId: 'call_1', parentCallId: 'call_1', subCallId: 'call_1:ptc:1', name: 'ask_user_question', arguments: { questions: [] } }
+emit(main, { type: 'tool/ptc-dispatch-start', data: ptcCall })
+await tick()
+check('PTC-dispatched ask_user_question notifies',
+  sent.length === 7 && cardTextOf(sent[6]).includes('回答问题'))
+
+emit(main, { type: 'tool/ptc-dispatch-start', data: { ...ptcCall, subCallId: 'call_1:ptc:2', name: 'exit_plan_mode' } })
+await tick()
+check('PTC-dispatched exit_plan_mode notifies',
+  sent.length === 8 && cardTextOf(sent[7]).includes('确认计划'))
+
+emit(main, { type: 'tool/ptc-dispatch-start', data: { ...ptcCall, subCallId: 'call_1:ptc:3', name: 'pwsh' } })
+emit(main, { type: 'tool/ptc-dispatch', data: { ...ptcCall, isError: false, content: [] } })
+await tick()
+check('ordinary nested tools and PTC completion stay silent', sent.length === 8)
 
 // test route
 const callRoute = async (method, cfg) => {
@@ -136,16 +227,22 @@ const callRoute = async (method, cfg) => {
   await ctx.state.routes[0].handler({ method }, res)
   return res
 }
+const beforeRoute = sent.length
 const okRes = await callRoute('POST')
-check('POST test route sends a message', okRes.status === 200 && JSON.parse(okRes.body).ok === true && sent.length === 5)
+check('POST test route sends a card', okRes.status === 200 && JSON.parse(okRes.body).ok === true
+  && sent.length === beforeRoute + 1
+  && sent[beforeRoute].body.msg_type === 'interactive'
+  && sent[beforeRoute].body.card.schema === '2.0'
+  && sent[beforeRoute].body.card.body.elements[0].content.includes('测试消息'))
 const getRes = await callRoute('GET')
 check('GET test route is 405', getRes.status === 405)
+const afterRoute = sent.length
 
 const disabledCtx = stubHostCtx()
 host.apply(disabledCtx, host.Config({ enabled: false, webhook: 'https://open.feishu.cn/open-apis/bot/v2/hook/stub' }))
 disabledCtx.state.listeners['session/event']({ header: {} }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
 await tick()
-check('disabled plugin sends nothing', sent.length === 5)
+check('disabled plugin sends nothing', sent.length === afterRoute)
 const disabledRes = { status: undefined, body: '', writeHead(s) { this.status = s }, end(b) { this.body = b ?? '' } }
 await disabledCtx.state.routes[0].handler({ method: 'POST' }, disabledRes)
 check('disabled plugin test route is 409', disabledRes.status === 409)
@@ -154,7 +251,7 @@ const emptyCtx = stubHostCtx()
 host.apply(emptyCtx, host.Config({ enabled: true, webhook: '' }))
 emptyCtx.state.listeners['session/event']({ header: {} }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
 await tick()
-check('unconfigured webhook sends nothing', sent.length === 5)
+check('unconfigured webhook sends nothing', sent.length === afterRoute)
 
 // -------------------------------------------------------------- client half
 let module
